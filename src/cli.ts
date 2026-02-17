@@ -1,0 +1,162 @@
+#!/usr/bin/env node
+
+import { Octokit } from "@octokit/rest";
+import Anthropic from "@anthropic-ai/sdk";
+import dotenv from "dotenv";
+import { existsSync } from "fs";
+
+import { fetchCommitsByUser } from "./github/commits.js";
+import { fetchPRsByUser } from "./github/prs.js";
+import { fetchIssueActivityByUser } from "./github/issues.js";
+import { generateStandupNote } from "./ai/summarize.js";
+import { postStandupToSlack } from "./slack/post.js";
+import { startScheduler } from "./scheduler/cron.js";
+import { runSetupWizard, loadConfig, getEnvPath } from "./setup.js";
+
+// ── CLI Commands ─────────────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+const command = args[0];
+
+async function main() {
+  // Setup command
+  if (command === "setup" || command === "configure") {
+    await runSetupWizard();
+    return;
+  }
+
+  // Check if setup has been run
+  const envPath = getEnvPath();
+  if (!existsSync(envPath)) {
+    console.error(`
+❌ Configuration not found. Please run setup first:
+
+    standup-cli setup
+
+`);
+    process.exit(1);
+  }
+
+  // Load env from ~/.standup-cli/.env
+  dotenv.config({ path: envPath });
+
+  const config = loadConfig();
+
+  if (command === "run" || command === "--run-now" || command === "-r") {
+    await runStandupJob(config);
+  } else if (command === "schedule" || command === "--schedule" || command === "-s") {
+    startScheduler(config.schedule, config.timezone, async () => {
+      await runStandupJob(config);
+    });
+  } else if (command === "status") {
+    showStatus(config);
+  } else {
+    showHelp();
+  }
+}
+
+// ── Core Standup Job ─────────────────────────────────────────────────────────
+
+async function runStandupJob(config: any): Promise<void> {
+  const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const lookbackMs = config.lookback_hours * 60 * 60 * 1000;
+  const since = new Date(Date.now() - lookbackMs);
+
+  const dateLabel = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: config.timezone,
+  });
+
+  console.log(`\n📋 Generating standups for: ${config.team_members.join(", ")}`);
+  console.log(`📅 Looking back ${config.lookback_hours} hours (since ${since.toISOString()})\n`);
+
+  const standupNotes = [];
+
+  for (const username of config.team_members) {
+    console.log(`  🔍 Fetching activity for ${username}...`);
+
+    const [commits, prs, issueActivity] = await Promise.all([
+      fetchCommitsByUser(octokit, config.github_owner, config.github_repo, username, since),
+      fetchPRsByUser(octokit, config.github_owner, config.github_repo, username, since),
+      fetchIssueActivityByUser(octokit, config.github_owner, config.github_repo, username, since),
+    ]);
+
+    console.log(
+      `     commits: ${commits.length}, PRs: ${prs.length}, issue activity: ${issueActivity.length}`
+    );
+
+    const note = await generateStandupNote(anthropic, {
+      username,
+      commits,
+      prs,
+      issueActivity,
+      lookbackHours: config.lookback_hours,
+    });
+
+    standupNotes.push(note);
+    console.log(`  ✅ Standup generated for ${username}`);
+  }
+
+  console.log(`\n📤 Posting to Slack...`);
+  await postStandupToSlack(
+    process.env.SLACK_USER_TOKEN!,
+    process.env.SLACK_CHANNEL_ID!,
+    standupNotes,
+    "🌅 Daily Standup",
+    dateLabel
+  );
+
+  console.log(`\n✅ Done! Standup posted for ${standupNotes.length} team members.\n`);
+}
+
+// ── CLI Helpers ──────────────────────────────────────────────────────────────
+
+function showStatus(config: any) {
+  console.log(`
+╔═══════════════════════════════════════════════════╗
+║   standup-cli Status                              ║
+╠═══════════════════════════════════════════════════╣
+║                                                   ║
+║   Schedule:          ${config.schedule.padEnd(27, ' ')}║
+║   Timezone:          ${config.timezone.padEnd(27, ' ')}║
+║   Team members:      ${config.team_members.length} members${' '.repeat(16)}║
+║   Repo:              ${(config.github_owner + '/' + config.github_repo).padEnd(27, ' ')}║
+║                                                   ║
+╚═══════════════════════════════════════════════════╝
+`);
+}
+
+function showHelp() {
+  console.log(`
+standup-cli — AI-powered daily standup generator
+
+Usage:
+  standup-cli setup       Interactive setup wizard
+  standup-cli run         Generate and post standup right now
+  standup-cli schedule    Start daily scheduler
+  standup-cli status      Show current configuration and usage
+
+Aliases:
+  standup-cli -r          Same as 'run'
+  standup-cli -s          Same as 'schedule'
+
+Examples:
+  standup-cli setup                    # First-time setup
+  standup-cli run                      # Test it immediately
+  standup-cli schedule                 # Run daily at configured time
+
+Configuration is stored in: ~/.standup-cli/
+`);
+}
+
+// ── Entry Point ──────────────────────────────────────────────────────────────
+
+main().catch((err) => {
+  console.error("❌ Fatal error:", err.message);
+  process.exit(1);
+});
