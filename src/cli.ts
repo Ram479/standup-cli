@@ -11,7 +11,8 @@ import { fetchIssueActivityByUser } from "./github/issues.js";
 import { generateStandupNote } from "./ai/summarize.js";
 import { postStandupToSlack } from "./slack/post.js";
 import { startScheduler } from "./scheduler/cron.js";
-import { runSetupWizard, loadConfig, getEnvPath } from "./setup.js";
+import { runSetupWizard, loadConfig, getEnvPath, showCurrentConfig, showUpdateHelp, updateConfig } from "./setup.js";
+import { runInteractiveAgent } from "./agent/loop.js";
 
 // ── CLI Commands ─────────────────────────────────────────────────────────────
 
@@ -22,6 +23,19 @@ async function main() {
   // Setup command
   if (command === "setup" || command === "configure") {
     await runSetupWizard();
+    return;
+  }
+
+  // Update command
+  if (command === "update") {
+    const field = args[1];
+    const value = args.slice(2).join(" ");
+    if (!field) {
+      showCurrentConfig();
+      showUpdateHelp();
+      return;
+    }
+    updateConfig(field, value);
     return;
   }
 
@@ -42,7 +56,9 @@ async function main() {
 
   const config = loadConfig();
 
-  if (command === "run" || command === "--run-now" || command === "-r") {
+  if (command === "agent" || command === "chat" || command === "-a") {
+    await runAgentJob(config);
+  } else if (command === "run" || command === "--run-now" || command === "-r") {
     await runStandupJob(config);
   } else if (command === "schedule" || command === "--schedule" || command === "-s") {
     startScheduler(config.schedule, config.timezone, async () => {
@@ -114,9 +130,25 @@ async function runStandupJob(config: any): Promise<void> {
   console.log(`\n✅ Done! Standup posted for ${standupNotes.length} team members.\n`);
 }
 
+// ── Agent Job ────────────────────────────────────────────────────────────────
+
+async function runAgentJob(config: any): Promise<void> {
+  const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  await runInteractiveAgent(anthropic, octokit, process.env.SLACK_USER_TOKEN!, process.env.SLACK_CHANNEL_ID!, config);
+}
+
 // ── CLI Helpers ──────────────────────────────────────────────────────────────
 
 function showStatus(config: any) {
+  const repos: { owner: string; repo: string }[] = config.github_repos ?? [
+    { owner: config.github_owner, repo: config.github_repo },
+  ];
+  const repoLabel = repos.length === 1
+    ? `${repos[0].owner}/${repos[0].repo}`
+    : `${repos.length} repos`;
+
   console.log(`
 ╔═══════════════════════════════════════════════════╗
 ║   standup-cli Status                              ║
@@ -124,11 +156,19 @@ function showStatus(config: any) {
 ║                                                   ║
 ║   Schedule:          ${config.schedule.padEnd(27, ' ')}║
 ║   Timezone:          ${config.timezone.padEnd(27, ' ')}║
-║   Team members:      ${config.team_members.length} members${' '.repeat(16)}║
-║   Repo:              ${(config.github_owner + '/' + config.github_repo).padEnd(27, ' ')}║
+║   Team members:      ${String(config.team_members.length + ' members').padEnd(24, ' ')}║
+║   Repo:              ${repoLabel.padEnd(27, ' ')}║
 ║                                                   ║
 ╚═══════════════════════════════════════════════════╝
 `);
+
+  if (repos.length > 1) {
+    console.log("  Repositories:");
+    for (const r of repos) {
+      console.log(`    - ${r.owner}/${r.repo}`);
+    }
+    console.log();
+  }
 }
 
 function showHelp() {
@@ -136,19 +176,28 @@ function showHelp() {
 standup-cli — AI-powered daily standup generator
 
 Usage:
-  standup-cli setup       Interactive setup wizard
-  standup-cli run         Generate and post standup right now
-  standup-cli schedule    Start daily scheduler
-  standup-cli status      Show current configuration and usage
+  standup-cli setup                    Interactive setup wizard
+  standup-cli run                      Generate and post standup right now (pipeline)
+  standup-cli agent                    Interactive chat — ask about team activity, post standups
+  standup-cli schedule                 Start daily scheduler
+  standup-cli status                   Show current configuration summary
+  standup-cli update [field] [value]   Update a single config field
 
 Aliases:
   standup-cli -r          Same as 'run'
+  standup-cli -a          Same as 'agent'
+  standup-cli chat        Same as 'agent'
   standup-cli -s          Same as 'schedule'
+  standup-cli configure   Same as 'setup'
 
 Examples:
-  standup-cli setup                    # First-time setup
-  standup-cli run                      # Test it immediately
-  standup-cli schedule                 # Run daily at configured time
+  standup-cli setup                            # First-time setup
+  standup-cli run                              # Pipeline mode — fast, fixed steps
+  standup-cli agent                            # Chat — ask about PRs, commits, post standups
+  standup-cli schedule                         # Run daily at configured time
+  standup-cli update team-members alice,bob    # Update team members
+  standup-cli update repos org/fe,org/be       # Update repositories
+  standup-cli update                           # Show current config + available fields
 
 Configuration is stored in: ~/.standup-cli/
 `);

@@ -1,10 +1,11 @@
 {
-  "name": "standup-cli",
+  "name": "standup-agent",
   "version": "1.0.0",
   "description": "AI-powered daily standup generator — pulls GitHub activity and posts to Slack",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
+    "standup-agent": "./dist/cli.js",
     "standup-cli": "./dist/cli.js"
   },
   "files": [
