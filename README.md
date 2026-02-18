@@ -2,7 +2,7 @@
 
 **AI-powered daily standup agent** — pulls GitHub activity, summarizes it with Claude, and posts to Slack.
 
-> npm package: `standup-agent` | CLI commands: `standup-agent` or `standup-cli`
+> **npm package:** `standup-agent` | **CLI commands:** `standup-agent` or `standup-cli` (both work)
 
 ---
 
@@ -34,86 +34,140 @@ Priya
 
 ---
 
-## Installation
+## User Guide — Setup from Scratch
+
+Follow these steps to get standup-agent running on your machine. Total setup time: ~10 minutes.
+
+### Before you begin
+
+Make sure you have **Node.js 18+** installed:
+
+```bash
+node --version   # should show v18.x.x or higher
+```
+
+You'll also need three API keys/tokens ready. See the [API Keys & Tokens](#api-keys--tokens) section below for step-by-step instructions on getting each one:
+
+| What | Where to get it | Looks like |
+|---|---|---|
+| GitHub Personal Access Token | https://github.com/settings/tokens | `ghp_xxxxxxxxxxxx` |
+| Anthropic API Key | https://console.anthropic.com/settings/keys | `sk-ant-xxxxxxxxxxxx` |
+| Slack User OAuth Token | https://api.slack.com/apps (create an app) | `xoxp-xxxxxxxxxxxx` |
+| Slack Channel ID | Your Slack channel URL or channel details | `C0XXXXXXX` |
+
+### Step 1 — Install from npm
 
 ```bash
 npm install -g standup-agent
 ```
 
-Or run directly without installing:
+Or use without installing:
 
 ```bash
 npx standup-agent setup
-npx standup-agent run
 ```
 
 After installing, both `standup-agent` and `standup-cli` work as commands.
 
-### Requirements
+### Step 2 — Run the setup wizard
 
-- Node.js 18 or higher
-- A GitHub Personal Access Token (scopes: `repo`, `read:org`)
-- An Anthropic API key (you bring your own)
-- A Slack User OAuth Token + Channel ID
+```bash
+standup-agent setup
+```
+
+The wizard will ask you for each piece of configuration, one at a time:
+
+```
+1. GitHub Personal Access Token     →  paste your ghp_... token
+2. GitHub owner                     →  the org or user that owns the repo (e.g. "egovernments")
+3. GitHub repository name           →  the repo name (e.g. "DIGIT-Frontend")
+4. Additional repositories          →  optional, comma-separated owner/repo pairs (or press Enter to skip)
+5. Team member GitHub usernames     →  comma-separated (e.g. "alice,bob,charlie")
+6. Slack User OAuth Token           →  paste your xoxp-... token
+7. Slack Channel ID                 →  paste your C0... channel ID
+8. Cron schedule                    →  press Enter for default (9 AM weekdays)
+9. Timezone                         →  press Enter for default (Asia/Kolkata)
+10. Lookback hours                  →  press Enter for default (24 hours)
+11. Anthropic API Key               →  paste your sk-ant-... key
+```
+
+Configuration is saved to `~/.standup-cli/config.json` and `~/.standup-cli/.env`.
+
+### Step 3 — Test it (pipeline mode)
+
+```bash
+standup-agent run
+```
+
+This fetches each team member's GitHub activity from the last 24 hours, summarizes it with Claude AI, and posts the standup to your Slack channel. You should see the standup appear within seconds.
+
+### Step 4 — Try the AI agent (chat mode)
+
+```bash
+standup-agent chat
+```
+
+This opens an interactive chat where you can ask questions:
+
+```
+You: What did alice work on today?
+You: Show me open PRs across all repos
+You: Generate and post the standup for everyone
+You: exit
+```
+
+### Step 5 — Schedule daily standups (optional)
+
+```bash
+standup-agent schedule
+```
+
+This starts a cron scheduler that automatically runs the standup at your configured time (default: 9 AM weekdays). Keep the terminal open, or use pm2/nohup to run in the background (see [Running in the Background](#running-in-the-background)).
+
+### Step 6 — Update config anytime
+
+No need to re-run the full wizard. Change individual settings:
+
+```bash
+standup-agent update team-members alice,bob,charlie,dave
+standup-agent update repos my-org/frontend,my-org/backend
+standup-agent update timezone America/New_York
+standup-agent update lookback-hours 48
+```
+
+Run `standup-agent update` with no arguments to see your current config and all available fields.
+
+### Step 7 — Check status
+
+```bash
+standup-agent status
+```
+
+Shows your current schedule, timezone, team members, and repos at a glance.
 
 ---
 
-## Quick Start
-
-### 1. Run the setup wizard
-
-```bash
-standup-cli setup
-```
-
-The wizard walks you through everything interactively — GitHub token, repos, team members, Slack credentials, schedule, timezone, and Anthropic key.
-
-### 2. Test it
-
-```bash
-standup-cli run
-```
-
-Check your Slack channel — the standup should appear within seconds.
-
-### 3. Try interactive chat
-
-```bash
-standup-cli chat
-```
-
-Ask questions like "What did ram work on today?" or "Post standup for the backend team."
-
-### 4. Schedule daily standups
-
-```bash
-standup-cli schedule
-```
-
-Runs every morning at the time you configured (default: 9 AM weekdays).
-
----
-
-## Commands
+## Commands Reference
 
 | Command | Alias | Description |
 |---|---|---|
-| `standup-cli setup` | `configure` | Interactive configuration wizard |
-| `standup-cli run` | `-r` | Generate and post standup right now (pipeline mode) |
-| `standup-cli agent` | `-a`, `chat` | Interactive chat — ask about team activity, post standups |
-| `standup-cli schedule` | `-s` | Start the daily cron scheduler |
-| `standup-cli status` | | Show current configuration summary |
-| `standup-cli update [field] [value]` | | Update a single config field (see below) |
-| `standup-cli --help` | | Show help and all available commands |
+| `standup-agent setup` | `configure` | Interactive configuration wizard |
+| `standup-agent run` | `-r` | Generate and post standup (pipeline mode — fast, cheap) |
+| `standup-agent agent` | `-a`, `chat` | Interactive AI chat — ask about team activity, post standups |
+| `standup-agent schedule` | `-s` | Start the daily cron scheduler |
+| `standup-agent status` | | Show current configuration summary |
+| `standup-agent update [field] [value]` | | Update a single config field |
+
+All commands also work with `standup-cli` instead of `standup-agent`.
 
 ---
 
 ## Agent / Chat Mode
 
 ```bash
-standup-cli agent
+standup-agent agent
 # or
-standup-cli chat
+standup-agent chat
 ```
 
 Opens an interactive REPL where you can have a conversation with the AI agent. The agent has access to tools for fetching GitHub data and posting to Slack, and decides what to call based on your request.
@@ -137,7 +191,7 @@ Opens an interactive REPL where you can have a conversation with the AI agent. T
 ## Pipeline Mode
 
 ```bash
-standup-cli run
+standup-agent run
 ```
 
 A fixed, predictable pipeline: fetch commits/PRs/issues for each team member, summarize each with one Claude call, and post everything to Slack. Fast and cheap — ideal for automated daily runs.
@@ -223,24 +277,24 @@ Both files are updated automatically by `setup` and `update`.
 Change individual config fields without re-running the full setup wizard.
 
 ```bash
-standup-cli update <field> <value>
+standup-agent update <field> <value>
 ```
 
-Running `standup-cli update` with no arguments shows your current configuration and all available fields.
+Running `standup-agent update` with no arguments shows your current configuration and all available fields.
 
 ### Available fields
 
 | Field | Description | Example |
 |---|---|---|
-| `team-members` | Comma-separated GitHub usernames | `standup-cli update team-members alice,bob,charlie` |
-| `repos` | Comma-separated `owner/repo` pairs; first becomes primary | `standup-cli update repos my-org/frontend,my-org/backend` |
-| `slack-channel` | Slack channel ID | `standup-cli update slack-channel C0ABC1234` |
-| `slack-token` | Slack User OAuth Token | `standup-cli update slack-token xoxp-...` |
-| `github-token` | GitHub Personal Access Token | `standup-cli update github-token ghp_...` |
-| `anthropic-key` | Anthropic API key | `standup-cli update anthropic-key sk-ant-...` |
-| `lookback-hours` | Hours to look back for activity | `standup-cli update lookback-hours 48` |
-| `timezone` | IANA timezone | `standup-cli update timezone America/New_York` |
-| `schedule` | Cron expression | `standup-cli update schedule "0 10 * * 1-5"` |
+| `team-members` | Comma-separated GitHub usernames | `standup-agent update team-members alice,bob,charlie` |
+| `repos` | Comma-separated `owner/repo` pairs; first becomes primary | `standup-agent update repos my-org/frontend,my-org/backend` |
+| `slack-channel` | Slack channel ID | `standup-agent update slack-channel C0ABC1234` |
+| `slack-token` | Slack User OAuth Token | `standup-agent update slack-token xoxp-...` |
+| `github-token` | GitHub Personal Access Token | `standup-agent update github-token ghp_...` |
+| `anthropic-key` | Anthropic API key | `standup-agent update anthropic-key sk-ant-...` |
+| `lookback-hours` | Hours to look back for activity | `standup-agent update lookback-hours 48` |
+| `timezone` | IANA timezone | `standup-agent update timezone America/New_York` |
+| `schedule` | Cron expression | `standup-agent update schedule "0 10 * * 1-5"` |
 
 Both `config.json` and `.env` are updated together automatically.
 
@@ -252,7 +306,7 @@ standup-cli supports fetching activity across multiple GitHub repositories.
 
 ### Via the setup wizard
 
-During `standup-cli setup`, after entering your primary repo, you'll be prompted:
+During `standup-agent setup`, after entering your primary repo, you'll be prompted:
 
 ```
 Additional repositories? (comma-separated owner/repo, e.g. my-org/backend,my-org/infra — or Enter to skip):
@@ -263,7 +317,7 @@ The primary repo plus any extras are stored in `github_repos`.
 ### Via the `update` command
 
 ```bash
-standup-cli update repos my-org/frontend,my-org/backend,my-org/infra
+standup-agent update repos my-org/frontend,my-org/backend,my-org/infra
 ```
 
 The first repo becomes the primary (`github_owner`/`github_repo`), and all are stored in `github_repos`.
@@ -286,6 +340,24 @@ Edit `~/.standup-cli/config.json`:
 
 - `github_repos` is used by agent mode to query all listed repositories.
 - `github_owner` / `github_repo` is used by pipeline mode (`run`) and as a fallback when `github_repos` is not set.
+
+---
+
+## Team Members — Important
+
+When adding team members, use their **exact GitHub usernames** (not display names or email addresses).
+
+```bash
+# During setup wizard:
+Team member GitHub usernames: ramkrishna-egov,priya-dev,naveen42
+
+# Or update later:
+standup-agent update team-members ramkrishna-egov,priya-dev,naveen42
+```
+
+To find someone's GitHub username: go to their GitHub profile — the URL is `github.com/their-username`.
+
+The tool matches commits, PRs, and issues by GitHub username. If the username is wrong, that person will show "No GitHub activity recorded."
 
 ---
 
@@ -332,7 +404,7 @@ Alternatively, right-click the channel name in the Slack desktop app > **"View c
 
 ## Running in the Background
 
-The `standup-cli schedule` command needs to keep running. Here are ways to keep it alive:
+The `standup-agent schedule` command needs to keep running. Here are ways to keep it alive:
 
 **Option 1 — pm2 (recommended)**
 
@@ -346,7 +418,7 @@ pm2 startup  # auto-start on reboot
 **Option 2 — nohup**
 
 ```bash
-nohup standup-cli schedule > ~/standup.log 2>&1 &
+nohup standup-agent schedule > ~/standup.log 2>&1 &
 ```
 
 **Option 3 — System cron (run once daily instead of scheduler)**
@@ -354,7 +426,7 @@ nohup standup-cli schedule > ~/standup.log 2>&1 &
 ```bash
 crontab -e
 # Add:
-0 9 * * 1-5 standup-cli run >> ~/standup.log 2>&1
+0 9 * * 1-5 standup-agent run >> ~/standup.log 2>&1
 ```
 
 ---
@@ -362,7 +434,7 @@ crontab -e
 ## Troubleshooting
 
 **"Configuration not found"**
-Run `standup-cli setup` first.
+Run `standup-agent setup` first.
 
 **404 error on GitHub API**
 - Check that `github_owner` is the **org or user that owns the repo**, not your personal username
@@ -383,23 +455,39 @@ The GitHub API allows 5,000 requests/hour with a PAT. For very large teams (10+ 
 
 ---
 
-## Contributing
+## Local Development (from source)
 
-Contributions are welcome! Feel free to open issues or submit pull requests.
+If you want to run from source instead of npm, or contribute to the project:
 
 ```bash
-# Clone and set up for development
+# Clone the repo
 git clone https://github.com/Ram479/standup-cli.git
 cd standup-cli
+
+# Install dependencies
 npm install
 
 # Run in dev mode (no build needed)
 npx tsx src/cli.ts setup
 npx tsx src/cli.ts run
+npx tsx src/cli.ts chat
 
-# Build
+# Build to dist/
 npm run build
+
+# Test the built version
+node dist/cli.js run
+
+# Link globally (optional — makes standup-agent command available system-wide)
+npm link
+standup-agent run
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome! Feel free to open issues or submit pull requests at https://github.com/Ram479/standup-cli.
 
 ---
 
